@@ -12,6 +12,7 @@
   (:use [swank.core]
         [swank.core connection server]
         [swank.util.concurrent thread]
+        [swank.util.net sockets]
         [clojure.main :only [repl]])
   (:require [swank.commands]
             [swank.commands basic indent completion
@@ -21,7 +22,7 @@
   (:gen-class))
 
 (defn ignore-protocol-version [version]
-  (reset! *protocol-version* version))
+  (reset! protocol-version version))
 
 (defn- connection-serve [conn]
   (let [control
@@ -31,7 +32,8 @@
            (control-loop conn)
            (catch Exception e
              ;; fail silently
-             nil)))
+             nil))
+          (close-socket! (conn :socket)))
         read
         (dothread-swank
           (thread-set-name "Read Loop Thread")
@@ -39,8 +41,10 @@
            (read-loop conn control)
            (catch Exception e
              ;; This could be put somewhere better
+             (.println System/err "exception in read loop")
+             (.printStackTrace e)
              (.interrupt control)
-             (dosync (alter *connections* (partial remove #{conn}))))))]
+             (dosync (alter connections (partial remove #{conn}))))))]
     (dosync
      (ref-set (conn :control-thread) control)
      (ref-set (conn :read-thread) read))))
@@ -57,13 +61,21 @@
                   connection-serve
                   opts)))
 
+(def #^{:private true} encodings-map
+  {"UTF-8" "utf-8-unix"
+   })
+
+(defn- get-system-encoding []
+  (when-let [enc-name (.name (java.nio.charset.Charset/defaultCharset))]
+    (encodings-map enc-name)))
+
 (defn start-repl
   "Start the server wrapped in a repl. Use this to embed swank in your code."
   ([port & opts]
      (let [stop (atom false)
            opts (merge {:port (Integer. port)
-                        :encoding (or (System/getProperty
-                                       "swank.encoding")
+                        :encoding (or (System/getProperty "swank.encoding")
+                                      (get-system-encoding)
                                       "iso-latin-1-unix")}
                        (apply hash-map opts))]
        (repl :read (fn [rprompt rexit]
@@ -74,7 +86,7 @@
                                                 (File. "slime-port.txt")
                                                 (.getCanonicalPath))
                                             ~@(apply concat opts)))))
-             :need-prompt #(identity false))))
+             :need-prompt (constantly false))))
   ([] (start-repl 4005)))
 
 (def -main start-repl)

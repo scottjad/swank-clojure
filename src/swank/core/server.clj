@@ -13,7 +13,7 @@
 ;;  - Creates swank.core.connections
 ;;  - Spins up new threads
 
-(defonce *connections* (ref []))
+(defonce connections (ref []))
 
 (def slime-secret-path (str (user-home-path) File/separator ".slime-secret"))
 
@@ -40,7 +40,7 @@
 
    See also: `slime-secret'"
   ([#^Socket socket opts]
-     (returning [conn (make-connection socket (get opts :encoding *default-encoding*))]
+     (returning [conn (make-connection socket (get opts :encoding default-encoding))]
        (if-let [secret (slime-secret)]
          (when-not (= (read-from-connection conn) secret)
            (close-socket! socket))
@@ -60,7 +60,7 @@
       (binding [*out* out-redir
                 *err* out-redir]
         (dosync (ref-set (*current-connection* :writer-redir) *out*))
-        (dosync (alter *connections* conj *current-connection*))
+        (dosync (alter connections conj *current-connection*))
         (connection-serve *current-connection*)))))
 
 ;; Setup frontent
@@ -84,7 +84,7 @@
   [port announce-fn connection-serve opts]
   (start-swank-socket-server!
    (make-server-socket {:port    port
-                        :host    (opts :host)
+                        :host    (opts :host "localhost")
                         :backlog (opts :backlog 0)})
    #(socket-serve connection-serve % opts)
    {:announce announce-fn}))
